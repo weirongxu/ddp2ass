@@ -1,0 +1,20 @@
+[package]
+name = "ddp2ass"
+version = "0.1.0"
+edition = "2021"
+description = "Dandanplay 的 json 转成 ass 文件"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0.71"
+clap = { version = "4.3.0", features =["derive"] }
+float-ord = "0.3.2"
+inquire = "0.6.2"
+log = "0.4.17"
+md5 = "0.7.0"
+memchr = "2.5.0"
+pretty_env_logger = "0.5.0"
+reqwest = { version = "0.11.18", features = ["json"] }
+serde = { version = "1.0.163", features = ["derive"] }
+serde_json = "1.0.96"
+tokio = {version="1.28.1", features=["full"]}
