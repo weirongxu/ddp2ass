@@ -147,9 +147,10 @@ impl Dandan {
             None => "".to_string(),
         };
         let file_size = input_path.metadata()?.len();
+        let match_filename = format!("{} {}", folder_name, filename);
 
         let match_json = json!({
-            "fileName": format!("{} {}", folder_name, filename),
+            "fileName": match_filename,
             "fileHash": hash,
             "fileSize": file_size,
         });
@@ -169,7 +170,7 @@ impl Dandan {
         let episode_id = if matches_json.is_matched {
             matches_json.matches[0].episode_id
         } else {
-            Self::select_matches(&filename, &matches_json)?.episode_id
+            Self::select_matches(&match_filename, &matches_json)?.episode_id
         };
 
         let comments_json = reqwest::Client::new()
