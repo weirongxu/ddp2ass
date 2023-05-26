@@ -135,16 +135,21 @@ impl Dandan {
         }
 
         let hash = Self::get_file_hash(input_path)?;
-        let filename = input_path
-            .with_extension("")
-            .file_name()
-            .context("文件名解析失败")?
-            .to_string_lossy()
-            .to_string();
+        let folder_name = match input_path.parent() {
+            Some(p) => match p.file_name() {
+                Some(p) => p.to_string_lossy().to_string(),
+                None => "".to_string(),
+            },
+            None => "".to_string(),
+        };
+        let filename = match input_path.with_extension("").file_name() {
+            Some(p) => p.to_string_lossy().to_string(),
+            None => "".to_string(),
+        };
         let file_size = input_path.metadata()?.len();
 
         let match_json = json!({
-            "fileName": filename,
+            "fileName": format!("{} {}", folder_name, filename),
             "fileHash": hash,
             "fileSize": file_size,
         });
