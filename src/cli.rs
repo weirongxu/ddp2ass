@@ -1,7 +1,17 @@
-use crate::{CanvasConfig, Dandan, util::display_path};
+use crate::{util::display_path, CanvasConfig, Dandan};
 use anyhow::{anyhow, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::{collections::HashSet, path::PathBuf};
+
+#[derive(Clone, Debug, ValueEnum, serde::Deserialize)]
+pub enum SimplifiedOrTraditional {
+    #[serde(rename = "simplified")]
+    Simplified,
+    #[serde(rename = "traditional")]
+    Traditional,
+    #[serde(rename = "original")]
+    Original,
+}
 
 #[derive(Parser, Debug, serde::Deserialize)]
 #[clap(
@@ -29,6 +39,14 @@ pub struct Args {
 
     #[clap(long = "font-size", help = "弹幕字体大小", default_value = "25")]
     font_size: u32,
+
+    #[clap(
+        value_enum,
+        long = "simplified-or-traditional",
+        help = "换为繁体或简体",
+        default_value = "simplified"
+    )]
+    simplified_or_traditional: SimplifiedOrTraditional,
 
     #[clap(
         long = "width-ratio",
@@ -77,7 +95,10 @@ pub struct Args {
     )]
     alpha: f64,
 
-    #[clap(long = "force", help = "默认会跳过已经存在 json 缓存的文件，此参数会强制更新")]
+    #[clap(
+        long = "force",
+        help = "默认会跳过已经存在 json 缓存的文件，此参数会强制更新"
+    )]
     pub force: bool,
 
     #[clap(
@@ -163,6 +184,7 @@ impl Args {
 
     pub async fn process(&self) -> Result<()> {
         let path = PathBuf::from(self.input.clone());
+        let path = dunce::realpath(path)?;
         if path.is_dir() {
             self.process_folder(path).await?;
         } else {
@@ -177,8 +199,14 @@ impl Args {
         let denylist = self.denylist()?;
 
         let t = std::time::Instant::now();
-        let danmu_count =
-            Dandan::process_by_path(&file, self.force, canvas_config, &denylist).await?;
+        let danmu_count = Dandan::process_by_path(
+            &file,
+            self.force,
+            self.simplified_or_traditional.clone(),
+            canvas_config,
+            &denylist,
+        )
+        .await?;
 
         log::info!(
             "共转换 {} 个文件，共转换 {} 条弹幕，耗时 {:?}",
@@ -193,10 +221,6 @@ impl Args {
     async fn process_folder(&self, folder: PathBuf) -> Result<()> {
         let canvas_config = self.canvas_config();
         let denylist = self.denylist()?;
-
-        // Windows 下 canonicalize 会莫名其妙，见 https://stackoverflow.com/questions/1816691/how-do-i-resolve-a-canonical-filename-in-windows
-        #[cfg(not(windows))]
-        let folder = folder.canonicalize()?;
 
         let match_exts = vec![
             ".mp4", ".mov", ".wmv", ".avi", ".flv", ".f4v", ".swf", ".mkv", ".webm",
@@ -219,16 +243,21 @@ impl Args {
         let mut process_danmu_total = 0;
 
         for file in files {
-            let (file_count, danmu_count) =
-                match Dandan::process_by_path(&file, self.force, canvas_config.clone(), &denylist)
-                    .await
-                {
-                    Ok(danmu_count) => (1, danmu_count),
-                    Err(e) => {
-                        log::error!("文件 {} 转换错误：{:?}", display_path(&file), e);
-                        (0, 0)
-                    }
-                };
+            let (file_count, danmu_count) = match Dandan::process_by_path(
+                &file,
+                self.force,
+                self.simplified_or_traditional.clone(),
+                canvas_config.clone(),
+                &denylist,
+            )
+            .await
+            {
+                Ok(danmu_count) => (1, danmu_count),
+                Err(e) => {
+                    log::error!("文件 {} 转换错误：{:?}", display_path(&file), e);
+                    (0, 0)
+                }
+            };
             process_file_total += file_count;
             process_danmu_total += danmu_count;
         }

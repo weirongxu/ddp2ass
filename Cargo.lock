@@ -203,6 +203,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "dunce",
  "float-ord",
  "inquire",
  "log",
@@ -214,6 +215,12 @@ dependencies = [
  "serde_json",
  "tokio",
 ]
+
+[[package]]
+name = "dunce"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56ce8c6da7551ec6c462cbaf3bfbc75131ebbfa1c944aeaa9dab51ca1c5f0c3b"
 
 [[package]]
 name = "dyn-clone"

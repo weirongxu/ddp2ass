@@ -1,4 +1,6 @@
-use crate::{util::display_path, AssCreator, CanvasConfig, Danmu, DanmuType};
+use crate::{
+    cli::SimplifiedOrTraditional, util::display_path, AssCreator, CanvasConfig, Danmu, DanmuType,
+};
 use anyhow::{anyhow, Context, Result};
 use inquire::Select;
 use md5;
@@ -115,7 +117,11 @@ impl Dandan {
         Ok(hash)
     }
 
-    async fn fetch_comments_json(input_path: &PathBuf, force: bool) -> Result<CommentsJson> {
+    async fn fetch_comments_json(
+        input_path: &PathBuf,
+        force: bool,
+        simplified_or_traditional: SimplifiedOrTraditional,
+    ) -> Result<CommentsJson> {
         let json_path = input_path.with_extension("dandanplay.json");
 
         if json_path.is_dir() {
@@ -173,11 +179,17 @@ impl Dandan {
             Self::select_matches(&match_filename, &matches_json)?.episode_id
         };
 
+        let comments_url = format!(
+            "https://api.dandanplay.net/api/v2/comment/{}?withRelated=true&chConvert={}",
+            episode_id,
+            match simplified_or_traditional {
+                SimplifiedOrTraditional::Original => 0,
+                SimplifiedOrTraditional::Simplified => 1,
+                SimplifiedOrTraditional::Traditional => 2,
+            }
+        );
         let comments_json = reqwest::Client::new()
-            .get(format!(
-                "https://api.dandanplay.net/api/v2/comment/{}?withRelated=true",
-                episode_id
-            ))
+            .get(comments_url)
             .json(&matches_json)
             .header("Accept", "application/json")
             .header("User-Agent", "curl")
@@ -194,6 +206,7 @@ impl Dandan {
     pub async fn process_by_path(
         input_path: &PathBuf,
         force: bool,
+        simplified_or_traditional: SimplifiedOrTraditional,
         canvas_config: CanvasConfig,
         denylist: &Option<HashSet<String>>,
     ) -> Result<u64> {
@@ -210,7 +223,8 @@ impl Dandan {
             ));
         }
 
-        let comments_json = Self::fetch_comments_json(&input_path, force).await?;
+        let comments_json =
+            Self::fetch_comments_json(&input_path, force, simplified_or_traditional).await?;
 
         let count = Self::process_by_json(
             &input_path,

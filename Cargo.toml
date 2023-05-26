@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0.71"
 clap = { version = "4.3.0", features =["derive"] }
+dunce = "1.0.4"
 float-ord = "0.3.2"
 inquire = "0.6.2"
 log = "0.4.17"
