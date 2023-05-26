@@ -146,8 +146,8 @@ impl Dandan {
             Some(p) => p.to_string_lossy().to_string(),
             None => "".to_string(),
         };
-        let file_size = input_path.metadata()?.len();
         let match_filename = format!("{} {}", folder_name, filename);
+        let file_size = input_path.metadata()?.len();
 
         let match_json = json!({
             "fileName": match_filename,
