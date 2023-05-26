@@ -57,7 +57,7 @@ pub struct Args {
         long = "lane-size",
         short = 'l',
         help = "弹幕所占据的高度，即“行高度/行间距”",
-        default_value = "32"
+        default_value = "25"
     )]
     lane_size: u32,
 
