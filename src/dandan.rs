@@ -48,11 +48,11 @@ struct CommentsJson {
 
 #[derive(Serialize, Deserialize)]
 struct CommentItem {
-    // comment id
+    /// comment id
     cid: u64,
-    // position
+    /// position
     p: String,
-    // comment
+    /// comment
     m: String,
 }
 
@@ -134,7 +134,7 @@ impl Dandan {
             return Ok(serde_json::from_str(&json)?);
         }
 
-        let hash = Dandan::get_file_hash(input_path)?;
+        let hash = Self::get_file_hash(input_path)?;
         let filename = input_path
             .with_extension("")
             .file_name()
@@ -164,7 +164,7 @@ impl Dandan {
         let episode_id = if matches_json.is_matched {
             matches_json.matches[0].episode_id
         } else {
-            Self::select_matches(&matches_json)?.episode_id
+            Self::select_matches(&filename, &matches_json)?.episode_id
         };
 
         let comments_json = reqwest::Client::new()
@@ -204,9 +204,9 @@ impl Dandan {
             ));
         }
 
-        let comments_json = Dandan::fetch_comments_json(&input_path, force).await?;
+        let comments_json = Self::fetch_comments_json(&input_path, force).await?;
 
-        let count = Dandan::process_by_json(
+        let count = Self::process_by_json(
             &input_path,
             &output_path,
             comments_json,
@@ -217,12 +217,13 @@ impl Dandan {
         Ok(count)
     }
 
-    fn select_matches(matches_json: &MatchesJson) -> Result<MatchItem> {
+    fn select_matches(filename: &String, matches_json: &MatchesJson) -> Result<MatchItem> {
         let options: Vec<_> = matches_json
             .matches
             .iter()
             .map(|m| format!("{} {} {}", m.episode_id, m.anime_title, m.episode_title))
             .collect();
+        println!("无法精确匹配 {}", filename);
         let ans = Select::new("请选择匹配的动画:", options.clone()).prompt()?;
         let idx = options
             .iter()
@@ -246,7 +247,7 @@ impl Dandan {
 
         let mut file = File::create(output_path)?;
 
-        let (count, s) = Dandan::json_to_ass(input_json, title, denylist, canvas_config)?;
+        let (count, s) = Self::json_to_ass(input_json, title, denylist, canvas_config)?;
 
         file.write(s.as_bytes())?;
 
