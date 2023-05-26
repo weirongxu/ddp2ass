@@ -1,5 +1,5 @@
-use crate::{CanvasConfig, Dandan};
-use anyhow::Result;
+use crate::{CanvasConfig, Dandan, util::display_path};
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use std::{collections::HashSet, path::PathBuf};
 
@@ -77,7 +77,7 @@ pub struct Args {
     )]
     alpha: f64,
 
-    #[clap(long = "force", help = "默认会跳过已经存在的文件，此参数会强制转换")]
+    #[clap(long = "force", help = "默认会跳过已经存在 json 缓存的文件，此参数会强制更新")]
     pub force: bool,
 
     #[clap(
@@ -109,17 +109,17 @@ impl Args {
     pub fn check(&mut self) -> Result<()> {
         if let Some(f) = self.denylist.as_ref() {
             if !f.exists() {
-                anyhow::bail!("黑名单文件不存在");
+                return Err(anyhow!("黑名单文件不存在"));
             }
             if f.is_dir() {
-                anyhow::bail!("黑名单文件不能是目录");
+                return Err(anyhow!("黑名单文件不能是目录"));
             }
         }
         if self.float_percentage < 0.0 {
-            anyhow::bail!("滚动弹幕最大高度百分比不能小于 0");
+            return Err(anyhow!("滚动弹幕最大高度百分比不能小于 0"));
         }
         if self.float_percentage > 1.0 {
-            anyhow::bail!("滚动弹幕最大高度百分比不能大于 1");
+            return Err(anyhow!("滚动弹幕最大高度百分比不能大于 1"));
         }
 
         Ok(())
@@ -198,15 +198,19 @@ impl Args {
         #[cfg(not(windows))]
         let folder = folder.canonicalize()?;
 
+        let match_exts = vec![
+            ".mp4", ".mov", ".wmv", ".avi", ".flv", ".f4v", ".swf", ".mkv", ".webm",
+        ];
+
         let files: Vec<_> = folder
             .read_dir()?
             .filter_map(|f| f.ok())
             .map(|f| f.path())
-            .filter(|f| !f.ends_with(".ass"))
+            .filter(|f| match_exts.iter().any(|m| f.to_string_lossy().ends_with(m)))
             .collect();
 
         if files.is_empty() {
-            anyhow::bail!("没有找到任何文件");
+            return Err(anyhow!("没有找到任何文件"));
         }
 
         log::info!("共找到 {} 个文件", files.len());
@@ -221,7 +225,7 @@ impl Args {
                 {
                     Ok(danmu_count) => (1, danmu_count),
                     Err(e) => {
-                        log::error!("文件 {} 转换错误：{:?}", file.display(), e);
+                        log::error!("文件 {} 转换错误：{:?}", display_path(&file), e);
                         (0, 0)
                     }
                 };

@@ -7,6 +7,7 @@ mod cli;
 mod dandan;
 mod danmu;
 mod drawable;
+mod util;
 
 pub use cli::Args;
 pub use ass_creator::AssCreator;

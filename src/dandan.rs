@@ -1,14 +1,13 @@
-use crate::{AssCreator, CanvasConfig, Danmu, DanmuType};
-use anyhow::{Context, Result};
+use crate::{util::display_path, AssCreator, CanvasConfig, Danmu, DanmuType};
+use anyhow::{anyhow, Context, Result};
 use inquire::Select;
 use md5;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
     collections::HashSet,
-    fs::File,
+    fs::{self, read_to_string, File},
     io::{BufReader, Read, Write},
-    os::unix::prelude::MetadataExt,
     path::PathBuf,
 };
 
@@ -68,12 +67,12 @@ struct Position {
 impl Position {
     fn parse_mode(mode: String) -> Result<DanmuType> {
         let v = mode.parse::<u8>()?;
-        Ok(match v {
-            1 => DanmuType::Float,
-            4 => DanmuType::Bottom,
-            5 => DanmuType::Top,
-            v => anyhow::bail!("不支持的弹幕类型 {}", v),
-        })
+        match v {
+            1 => Ok(DanmuType::Float),
+            4 => Ok(DanmuType::Bottom),
+            5 => Ok(DanmuType::Top),
+            v => Err(anyhow!("不支持的弹幕类型 {}", v)),
+        }
     }
 
     fn parse_color(s: String) -> Result<(u8, u8, u8)> {
@@ -116,27 +115,23 @@ impl Dandan {
         Ok(hash)
     }
 
-    pub async fn process_by_path(
-        input_path: &PathBuf,
-        force: bool,
-        canvas_config: CanvasConfig,
-        denylist: &Option<HashSet<String>>,
-    ) -> Result<u64> {
-        if !input_path.exists() {
-            anyhow::bail!("视频文件 {} 不存在", input_path.display());
+    async fn fetch_comments_json(input_path: &PathBuf, force: bool) -> Result<CommentsJson> {
+        let json_path = input_path.with_extension("dandanplay.json");
+
+        if json_path.is_dir() {
+            return Err(anyhow!(
+                "弹幕缓存 {} 文件不能是一个目录",
+                display_path(&json_path),
+            ));
         }
 
-        let output = input_path.with_extension("ass");
-
-        if output.is_dir() {
-            anyhow::bail!("输出文件 {} 不能是一个目录", output.display());
-        }
-
-        if output.exists() && !force {
-            anyhow::bail!(
-                "生成文件 {} 已经存在，使用 --force 参数强制生成",
-                output.display()
+        if json_path.exists() && !force {
+            log::warn!(
+                "弹幕缓存 {} 已经存在，使用 --force 参数强制更新",
+                display_path(&json_path),
             );
+            let json = read_to_string(json_path)?;
+            return Ok(serde_json::from_str(&json)?);
         }
 
         let hash = Dandan::get_file_hash(input_path)?;
@@ -146,7 +141,7 @@ impl Dandan {
             .context("文件名解析失败")?
             .to_string_lossy()
             .to_string();
-        let file_size = input_path.metadata()?.size();
+        let file_size = input_path.metadata()?.len();
 
         let match_json = json!({
             "fileName": filename,
@@ -185,7 +180,39 @@ impl Dandan {
             .json::<CommentsJson>()
             .await?;
 
-        let count = Dandan::process_by_json(&input_path, comments_json, &denylist, canvas_config)?;
+        fs::write(json_path, serde_json::to_string(&comments_json)?)?;
+
+        Ok(comments_json)
+    }
+
+    pub async fn process_by_path(
+        input_path: &PathBuf,
+        force: bool,
+        canvas_config: CanvasConfig,
+        denylist: &Option<HashSet<String>>,
+    ) -> Result<u64> {
+        if !input_path.exists() {
+            return Err(anyhow!("视频文件 {} 不存在", display_path(&input_path)));
+        }
+
+        let output_path = input_path.with_extension("ass");
+
+        if output_path.is_dir() {
+            return Err(anyhow!(
+                "输出文件 {} 不能是一个目录",
+                display_path(&output_path)
+            ));
+        }
+
+        let comments_json = Dandan::fetch_comments_json(&input_path, force).await?;
+
+        let count = Dandan::process_by_json(
+            &input_path,
+            &output_path,
+            comments_json,
+            &denylist,
+            canvas_config,
+        )?;
 
         Ok(count)
     }
@@ -206,17 +233,16 @@ impl Dandan {
 
     fn process_by_json(
         input_path: &PathBuf,
+        output_path: &PathBuf,
         input_json: CommentsJson,
         denylist: &Option<HashSet<String>>,
         canvas_config: CanvasConfig,
     ) -> Result<u64> {
-        let output_path = input_path.with_extension("ass");
-
-        if output_path.is_dir() {
-            anyhow::bail!("输出文件 {} 不能是一个目录", output_path.display());
-        }
-
-        let title = input_path.to_string_lossy().to_string();
+        let title = input_path
+            .file_name()
+            .context("Filename not found")?
+            .to_string_lossy()
+            .to_string();
 
         let mut file = File::create(output_path)?;
 
