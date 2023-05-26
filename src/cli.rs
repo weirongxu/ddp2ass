@@ -30,6 +30,14 @@ pub struct Args {
     height: u32,
 
     #[clap(
+        value_enum,
+        long = "simplified-or-traditional",
+        help = "换为繁体或简体",
+        default_value = "simplified"
+    )]
+    simplified_or_traditional: SimplifiedOrTraditional,
+
+    #[clap(
         long = "font",
         short = 'f',
         help = "弹幕使用字体。单位：像素",
@@ -37,16 +45,16 @@ pub struct Args {
     )]
     font: String,
 
-    #[clap(long = "font-size", help = "弹幕字体大小", default_value = "25")]
+    #[clap(long = "font-size", help = "弹幕字体大小", default_value = "30")]
     font_size: u32,
 
     #[clap(
-        value_enum,
-        long = "simplified-or-traditional",
-        help = "换为繁体或简体",
-        default_value = "simplified"
+        long = "lane-size",
+        short = 'l',
+        help = "弹幕所占据的高度，即“行高度/行间距”",
+        default_value = "30"
     )]
-    simplified_or_traditional: SimplifiedOrTraditional,
+    lane_size: u32,
 
     #[clap(
         long = "width-ratio",
@@ -70,14 +78,6 @@ pub struct Args {
         default_value = "15"
     )]
     duration: f64,
-
-    #[clap(
-        long = "lane-size",
-        short = 'l',
-        help = "弹幕所占据的高度，即“行高度/行间距”",
-        default_value = "25"
-    )]
-    lane_size: u32,
 
     #[clap(
         long = "float-percentage",
