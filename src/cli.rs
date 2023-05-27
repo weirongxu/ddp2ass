@@ -45,14 +45,14 @@ pub struct Args {
     )]
     font: String,
 
-    #[clap(long = "font-size", help = "弹幕字体大小", default_value = "30")]
+    #[clap(long = "font-size", help = "弹幕字体大小", default_value = "35")]
     font_size: u32,
 
     #[clap(
         long = "lane-size",
         short = 'l',
         help = "弹幕所占据的高度，即“行高度/行间距”",
-        default_value = "30"
+        default_value = "35"
     )]
     lane_size: u32,
 
