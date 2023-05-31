@@ -3,6 +3,8 @@ use anyhow::Result;
 use std::borrow::Cow;
 use std::fmt;
 use std::io::Write;
+use std::process::Command;
+use tempfile::NamedTempFile;
 
 struct TimePoint {
     t: f64,
@@ -163,6 +165,28 @@ impl AssCreator {
             text = escape_text(&drawable.danmu.content),
             // text = (0..drawable.danmu.content.chars().count()).map(|_| '晚').collect::<String>(),
         )?;
+        Ok(())
+    }
+
+    pub fn merge(&mut self, ass: String) -> Result<()> {
+        let mut ass_tmp1 = tempfile::Builder::new().suffix(".ass").tempfile()?;
+        write!(ass_tmp1, "{}", ass)?;
+        let mut ass_tmp2 = tempfile::Builder::new().suffix(".ass").tempfile()?;
+        write!(ass_tmp2, "{}", String::from_utf8(self.buf.clone())?)?;
+        let mut cmd = Command::new("ffmpeg");
+        cmd.args([
+            "-i",
+            &format!(
+                "concat:{}|{}",
+                ass_tmp1.path().to_string_lossy().to_string(),
+                ass_tmp2.path().to_string_lossy().to_string(),
+            ),
+            "-f",
+            "ass",
+            "pipe:1",
+        ]);
+        let ass = cmd.output()?;
+        self.buf = ass.stdout;
         Ok(())
     }
 }

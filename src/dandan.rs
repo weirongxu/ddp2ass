@@ -11,6 +11,7 @@ use std::{
     fs::{self, read_to_string, File},
     io::{BufReader, Read, Write},
     path::PathBuf,
+    process::Command,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -207,12 +208,32 @@ impl Dandan {
         input_path: &PathBuf,
         force: bool,
         simplified_or_traditional: SimplifiedOrTraditional,
+        merge_built_in: String,
         canvas_config: CanvasConfig,
         denylist: &Option<HashSet<String>>,
     ) -> Result<u64> {
         if !input_path.exists() {
             return Err(anyhow!("视频文件 {} 不存在", display_path(&input_path)));
         }
+
+        let input_path_str = input_path.to_str().context("视频路径无法解析")?;
+
+        let built_in_ass = if merge_built_in.is_empty() {
+            None
+        } else {
+            let mut cmd = Command::new("ffmpeg");
+            cmd.args([
+                "-i",
+                input_path_str,
+                "-map",
+                &format!("0:s:{}", merge_built_in),
+                "-f",
+                "ass",
+                "pipe:1",
+            ]);
+            let ass = cmd.output()?;
+            Some(String::from_utf8(ass.stdout)?)
+        };
 
         let output_path = input_path.with_extension("ass");
 
@@ -230,6 +251,7 @@ impl Dandan {
             &input_path,
             &output_path,
             comments_json,
+            built_in_ass,
             &denylist,
             canvas_config,
         )?;
@@ -256,6 +278,7 @@ impl Dandan {
         input_path: &PathBuf,
         output_path: &PathBuf,
         input_json: CommentsJson,
+        built_in_ass: Option<String>,
         denylist: &Option<HashSet<String>>,
         canvas_config: CanvasConfig,
     ) -> Result<u64> {
@@ -267,7 +290,8 @@ impl Dandan {
 
         let mut file = File::create(output_path)?;
 
-        let (count, s) = Self::json_to_ass(input_json, title, denylist, canvas_config)?;
+        let (count, s) =
+            Self::json_to_ass(input_json, built_in_ass, title, denylist, canvas_config)?;
 
         file.write(s.as_bytes())?;
 
@@ -276,6 +300,7 @@ impl Dandan {
 
     fn json_to_ass(
         input_json: CommentsJson,
+        built_in_ass: Option<String>,
         title: String,
         denylist: &Option<HashSet<String>>,
         canvas_config: CanvasConfig,
@@ -304,6 +329,10 @@ impl Dandan {
                 count += 1;
                 ass.write(drawable)?;
             }
+        }
+
+        if let Some(built_in_ass) = built_in_ass {
+            ass.merge(built_in_ass)?;
         }
 
         log::info!("弹幕数量：{}, 耗时 {:?}（{}）", count, t.elapsed(), title);
@@ -373,7 +402,7 @@ mod tests {
 
         let args = Args::parse_from(["test"]);
         let (_count, ass) =
-            Dandan::json_to_ass(json, "test".to_string(), &None, args.canvas_config())?;
+            Dandan::json_to_ass(json, None, "test".to_string(), &None, args.canvas_config())?;
 
         assert_eq!(
             ass,

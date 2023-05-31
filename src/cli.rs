@@ -38,6 +38,13 @@ pub struct Args {
     simplified_or_traditional: SimplifiedOrTraditional,
 
     #[clap(
+        long = "merge-built-in",
+        help = "与视频内置字幕合并，值为内置弹幕 steam， 需要 ffmpeg 命令， 例如: --merge-built-in=0",
+        default_value = ""
+    )]
+    merge_built_in: String,
+
+    #[clap(
         long = "font",
         short = 'f',
         help = "弹幕使用字体。单位：像素",
@@ -203,6 +210,7 @@ impl Args {
             &file,
             self.force,
             self.simplified_or_traditional.clone(),
+            self.merge_built_in.clone(),
             canvas_config,
             &denylist,
         )
@@ -247,6 +255,7 @@ impl Args {
                 &file,
                 self.force,
                 self.simplified_or_traditional.clone(),
+                self.merge_built_in.clone(),
                 canvas_config.clone(),
                 &denylist,
             )
