@@ -4,7 +4,6 @@ use std::borrow::Cow;
 use std::fmt;
 use std::io::Write;
 use std::process::Command;
-use tempfile::NamedTempFile;
 
 struct TimePoint {
     t: f64,
