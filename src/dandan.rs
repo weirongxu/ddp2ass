@@ -59,6 +59,23 @@ struct CommentItem {
     m: String,
 }
 
+#[derive(Serialize, Deserialize)]
+struct FfprobeSubJson {
+    #[serde(rename = "streams")]
+    streams: Vec<FfprobeSubStream>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FfprobeSubStream {
+    index: i64,
+    tags: FfprobeSubStreamTag,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FfprobeSubStreamTag {
+    language: String,
+}
+
 struct Position {
     timestamp_s: f64,
     mode: DanmuType,
@@ -204,11 +221,76 @@ impl Dandan {
         Ok(comments_json)
     }
 
+    fn built_in_ass_from(input_path_str: String, merge_built_in: String) -> Result<String> {
+        Ok(String::from_utf8(
+            Command::new("ffmpeg")
+                .args([
+                    "-i",
+                    &input_path_str,
+                    "-map",
+                    &format!("0:{}", merge_built_in),
+                    "-f",
+                    "ass",
+                    "pipe:1",
+                ])
+                .output()?
+                .stdout,
+        )?)
+    }
+
+    fn built_in_ass_by(
+        input_path_str: String,
+        merge_built_in: String,
+        merge_built_in_interactive: bool,
+    ) -> Result<Option<String>> {
+        if !merge_built_in.is_empty() {
+            Ok(Some(Self::built_in_ass_from(
+                input_path_str,
+                merge_built_in,
+            )?))
+        } else if merge_built_in_interactive {
+            let sub_json = String::from_utf8(
+                Command::new("ffprobe")
+                    .args([
+                        "-v",
+                        "error",
+                        "-of",
+                        "json",
+                        "-show_entries",
+                        "stream=index:stream_tags=language",
+                        "-select_streams",
+                        "s",
+                        &input_path_str,
+                    ])
+                    .output()?
+                    .stdout,
+            )?;
+            let sub_json: FfprobeSubJson = serde_json::from_str(&sub_json)?;
+            let options: Vec<_> = sub_json
+                .streams
+                .iter()
+                .map(|s| format!("{} {}", s.index, s.tags.language))
+                .collect();
+            let ans = Select::new("请选择合并的字幕:", options.clone()).prompt()?;
+            let idx = options
+                .iter()
+                .position(|o| o == &ans)
+                .context("Select matches not found")?;
+            let sub_index = sub_json.streams[idx].index;
+            Ok(Some(Self::built_in_ass_from(
+                input_path_str,
+                sub_index.to_string(),
+            )?))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn process_by_path(
         input_path: &PathBuf,
         force: bool,
         simplified_or_traditional: SimplifiedOrTraditional,
-        merge_built_in: String,
+        merge_built_in_interactive: bool, merge_built_in: String,
         canvas_config: CanvasConfig,
         denylist: &Option<HashSet<String>>,
     ) -> Result<u64> {
@@ -218,22 +300,11 @@ impl Dandan {
 
         let input_path_str = input_path.to_str().context("视频路径无法解析")?;
 
-        let built_in_ass = if merge_built_in.is_empty() {
-            None
-        } else {
-            let mut cmd = Command::new("ffmpeg");
-            cmd.args([
-                "-i",
-                input_path_str,
-                "-map",
-                &format!("0:s:{}", merge_built_in),
-                "-f",
-                "ass",
-                "pipe:1",
-            ]);
-            let ass = cmd.output()?;
-            Some(String::from_utf8(ass.stdout)?)
-        };
+        let built_in_ass = Self::built_in_ass_by(
+            input_path_str.to_string(),
+            merge_built_in,
+            merge_built_in_interactive,
+        )?;
 
         let output_path = input_path.with_extension("ass");
 
