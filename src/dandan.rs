@@ -7,6 +7,7 @@ use md5;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
+    cmp::Ordering,
     collections::HashSet,
     fs::{self, read_to_string, File},
     io::{BufReader, Read, Write},
@@ -290,7 +291,8 @@ impl Dandan {
         input_path: &PathBuf,
         force: bool,
         simplified_or_traditional: SimplifiedOrTraditional,
-        merge_built_in_interactive: bool, merge_built_in: String,
+        merge_built_in_interactive: bool,
+        merge_built_in: String,
         canvas_config: CanvasConfig,
         denylist: &Option<HashSet<String>>,
     ) -> Result<u64> {
@@ -381,6 +383,7 @@ impl Dandan {
         let mut count = 0;
         let mut canvas = canvas_config.canvas();
         let t = std::time::Instant::now();
+        let mut danmus: Vec<Danmu> = Vec::new();
 
         for c in input_json.comments {
             let pos = Position::parse(c.p)?;
@@ -391,6 +394,16 @@ impl Dandan {
                 r#type: pos.mode,
                 rgb: pos.color,
             };
+            danmus.push(danmu);
+        }
+
+        danmus.sort_by(|a, b| {
+            a.timeline_s
+                .partial_cmp(&b.timeline_s)
+                .unwrap_or(Ordering::Equal)
+        });
+
+        for danmu in danmus {
             if let Some(denylist) = denylist.as_ref() {
                 if denylist.iter().any(|s| danmu.content.contains(s)) {
                     continue;
