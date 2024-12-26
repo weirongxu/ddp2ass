@@ -1,7 +1,9 @@
-use crate::{util::display_path, CanvasConfig, Dandan};
+use crate::{util::display_filename, CanvasConfig, Dandan};
 use anyhow::{anyhow, Result};
 use clap::{Parser, ValueEnum};
 use std::{collections::HashSet, path::PathBuf};
+
+use super::input_path_to_list;
 
 #[derive(Clone, Debug, ValueEnum, serde::Deserialize)]
 pub enum SimplifiedOrTraditional {
@@ -14,11 +16,6 @@ pub enum SimplifiedOrTraditional {
 }
 
 #[derive(Parser, Debug, serde::Deserialize)]
-#[clap(
-    author = "weirongxu",
-    version,
-    about = "将 dandanplay 弹幕转换为 ASS 文件"
-)]
 pub struct Args {
     #[clap(help = "需要转换的输入，可以是视频、文件夹", default_value = ".")]
     pub input: String,
@@ -115,6 +112,9 @@ pub struct Args {
     )]
     pub force: bool,
 
+    #[clap(long = "change-match", help = "修改识别结果")]
+    pub change_match: bool,
+
     #[clap(
         long = "denylist",
         help = "黑名单，需要过滤的关键词列表文件，每行一个关键词"
@@ -197,71 +197,24 @@ impl Args {
     }
 
     pub async fn process(&self) -> Result<()> {
-        let path = PathBuf::from(self.input.clone());
-        let path = dunce::realpath(path)?;
-        if path.is_dir() {
-            self.process_folder(path).await?;
-        } else {
-            self.process_file(path).await?;
-        }
-
-        Ok(())
-    }
-
-    async fn process_file(&self, file: PathBuf) -> Result<()> {
         let canvas_config = self.canvas_config();
         let denylist = self.denylist()?;
 
-        let t = std::time::Instant::now();
-        let danmu_count = Dandan::process_by_path(
-            &file,
-            self.force,
-            self.simplified_or_traditional.clone(),
-            self.merge_built_in_interactive,
-            self.merge_built_in.clone(),
-            canvas_config,
-            &denylist,
-        )
-        .await?;
-
-        log::info!(
-            "共转换 {} 个文件，共转换 {} 条弹幕，耗时 {:?}",
-            1,
-            danmu_count,
-            t.elapsed()
-        );
-
-        Ok(())
-    }
-
-    async fn process_folder(&self, folder: PathBuf) -> Result<()> {
-        let canvas_config = self.canvas_config();
-        let denylist = self.denylist()?;
-
-        let match_exts = vec![
-            ".mp4", ".mov", ".wmv", ".avi", ".flv", ".f4v", ".swf", ".mkv", ".webm",
-        ];
-
-        let files: Vec<_> = folder
-            .read_dir()?
-            .filter_map(|f| f.ok())
-            .map(|f| f.path())
-            .filter(|f| match_exts.iter().any(|m| f.to_string_lossy().ends_with(m)))
-            .collect();
-
-        if files.is_empty() {
+        let filepaths = input_path_to_list(&self.input)?;
+        if filepaths.is_empty() {
             return Err(anyhow!("没有找到任何文件"));
         }
 
-        log::info!("共找到 {} 个文件", files.len());
+        log::info!("共找到 {} 个文件", filepaths.len());
         let t = std::time::Instant::now();
         let mut process_file_total = 0;
         let mut process_danmu_total = 0;
 
-        for file in files {
+        for filepath in filepaths {
             let (file_count, danmu_count) = match Dandan::process_by_path(
-                &file,
+                &filepath,
                 self.force,
+                self.change_match,
                 self.simplified_or_traditional.clone(),
                 self.merge_built_in_interactive,
                 self.merge_built_in.clone(),
@@ -272,7 +225,7 @@ impl Args {
             {
                 Ok(danmu_count) => (1, danmu_count),
                 Err(e) => {
-                    log::error!("文件 {} 转换错误：{:?}", display_path(&file), e);
+                    log::error!("文件 {} 转换错误：{:?}", display_filename(&filepath), e);
                     (0, 0)
                 }
             };

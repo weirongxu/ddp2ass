@@ -1,52 +1,30 @@
 use crate::{
-    cli::SimplifiedOrTraditional, util::display_path, AssCreator, CanvasConfig, Danmu, DanmuType,
+    cli::SimplifiedOrTraditional, dandan_match::DandanMatch, util::display_filename, AssCreator,
+    CanvasConfig, Danmu, DanmuType,
 };
 use anyhow::{anyhow, Context, Result};
-use inquire::Select;
-use md5;
+use promkit::preset::listbox::Listbox;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::{
     cmp::Ordering,
     collections::HashSet,
     fs::{self, read_to_string, File},
-    io::{BufReader, Read, Write},
+    io::Write,
     path::PathBuf,
     process::Command,
 };
 
 #[derive(Serialize, Deserialize)]
-struct MatchesJson {
-    #[serde(rename = "isMatched")]
-    is_matched: bool,
-    matches: Vec<MatchItem>,
-    #[serde(rename = "errorCode")]
-    error_code: i64,
-    success: bool,
-    #[serde(rename = "errorMessage")]
-    error_message: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct MatchItem {
-    #[serde(rename = "episodeId")]
-    episode_id: i64,
-    #[serde(rename = "animeId")]
-    anime_id: i64,
-    #[serde(rename = "animeTitle")]
-    anime_title: String,
-    #[serde(rename = "episodeTitle")]
-    episode_title: String,
-    #[serde(rename = "type")]
-    match_type: String,
-    #[serde(rename = "typeDescription")]
-    type_description: String,
-    shift: f64,
-}
-
-#[derive(Serialize, Deserialize)]
 struct CommentsJson {
     count: i64,
+    #[serde(rename = "episodeId")]
+    pub episode_id: Option<i64>,
+    #[serde(rename = "animeId")]
+    pub anime_id: Option<i64>,
+    #[serde(rename = "animeTitle")]
+    pub anime_title: Option<String>,
+    #[serde(rename = "episodeTitle")]
+    pub episode_title: Option<String>,
     comments: Vec<CommentItem>,
 }
 
@@ -106,12 +84,12 @@ impl Position {
     }
 
     fn parse(s: String) -> Result<Position> {
-        let splited: Vec<_> = s.split(",").map(|v| v.to_string()).collect();
+        let split: Vec<_> = s.split(",").map(|v| v.to_string()).collect();
         let (timestamp_seconds, mode, color, user_id) = (
-            splited[0].clone(),
-            splited[1].clone(),
-            splited[2].clone(),
-            splited[3].clone(),
+            split[0].clone(),
+            split[1].clone(),
+            split[2].clone(),
+            split[3].clone(),
         );
         let color = Position::parse_color(color)?;
         Ok(Position {
@@ -126,19 +104,10 @@ impl Position {
 pub struct Dandan {}
 
 impl Dandan {
-    fn get_file_hash(path: &PathBuf) -> Result<String> {
-        let file = File::open(path)?;
-        let mut reader = BufReader::new(file);
-        let bytes_to_read: usize = 16 * 1024 * 1024;
-        let mut buf = vec![0u8; bytes_to_read];
-        reader.read(&mut buf)?;
-        let hash = format!("{:x}", md5::compute(buf));
-        Ok(hash)
-    }
-
     async fn fetch_comments_json(
         input_path: &PathBuf,
         force: bool,
+        change_match: bool,
         simplified_or_traditional: SimplifiedOrTraditional,
     ) -> Result<CommentsJson> {
         let json_path = input_path.with_extension("dandanplay.json");
@@ -146,76 +115,44 @@ impl Dandan {
         if json_path.is_dir() {
             return Err(anyhow!(
                 "弹幕缓存 {} 文件不能是一个目录",
-                display_path(&json_path),
+                display_filename(&json_path),
             ));
         }
 
-        if json_path.exists() && !force {
+        if json_path.exists() && !change_match && !force {
             log::warn!(
                 "弹幕缓存 {} 已经存在，使用 --force 参数强制更新",
-                display_path(&json_path),
+                display_filename(&json_path),
             );
             let json = read_to_string(json_path)?;
-            return Ok(serde_json::from_str(&json)?);
+            return Ok(serde_json::from_str::<CommentsJson>(&json)?);
         }
 
-        let hash = Self::get_file_hash(input_path)?;
-        let folder_name = match input_path.parent() {
-            Some(p) => match p.file_name() {
-                Some(p) => p.to_string_lossy().to_string(),
-                None => "".to_string(),
-            },
-            None => "".to_string(),
-        };
-        let filename = match input_path.with_extension("").file_name() {
-            Some(p) => p.to_string_lossy().to_string(),
-            None => "".to_string(),
-        };
-        let match_filename = format!("{} {}", folder_name, filename);
-        let file_size = input_path.metadata()?.len();
-
-        let match_json = json!({
-            "fileName": match_filename,
-            "fileHash": hash,
-            "fileSize": file_size,
-        });
-
-        debug!("match_json: {}", match_json.to_string());
-
-        let matches_json = reqwest::Client::new()
-            .post("https://api.dandanplay.net/api/v2/match")
-            .json(&match_json)
-            .header("Accept", "application/json")
-            .header("User-Agent", "curl")
-            .send()
-            .await?
-            .json::<MatchesJson>()
-            .await?;
-
-        let episode_id = if matches_json.is_matched {
-            matches_json.matches[0].episode_id
-        } else {
-            Self::select_matches(&match_filename, &matches_json)?.episode_id
-        };
+        let anime_episode_item =
+            DandanMatch::get_anime_episode_item(input_path, change_match).await?;
 
         let comments_url = format!(
             "https://api.dandanplay.net/api/v2/comment/{}?withRelated=true&chConvert={}",
-            episode_id,
+            anime_episode_item.episode_id,
             match simplified_or_traditional {
                 SimplifiedOrTraditional::Original => 0,
                 SimplifiedOrTraditional::Simplified => 1,
                 SimplifiedOrTraditional::Traditional => 2,
             }
         );
-        let comments_json = reqwest::Client::new()
+        let mut comments_json = reqwest::Client::new()
             .get(comments_url)
-            .json(&matches_json)
             .header("Accept", "application/json")
             .header("User-Agent", "curl")
             .send()
             .await?
             .json::<CommentsJson>()
             .await?;
+
+        comments_json.episode_id = Some(anime_episode_item.episode_id);
+        comments_json.anime_id = Some(anime_episode_item.anime_id);
+        comments_json.anime_title = Some(anime_episode_item.anime_title.clone());
+        comments_json.episode_title = Some(anime_episode_item.episode_title.clone());
 
         fs::write(json_path, serde_json::to_string(&comments_json)?)?;
 
@@ -272,7 +209,8 @@ impl Dandan {
                 .iter()
                 .map(|s| format!("{} {}", s.index, s.tags.language))
                 .collect();
-            let ans = Select::new("请选择合并的字幕:", options.clone()).prompt()?;
+            let mut select_prompt = Listbox::new(options.clone()).title("请选择合并的字幕").prompt()?;
+            let ans = select_prompt.run()?;
             let idx = options
                 .iter()
                 .position(|o| o == &ans)
@@ -290,6 +228,7 @@ impl Dandan {
     pub async fn process_by_path(
         input_path: &PathBuf,
         force: bool,
+        change_match: bool,
         simplified_or_traditional: SimplifiedOrTraditional,
         merge_built_in_interactive: bool,
         merge_built_in: String,
@@ -297,7 +236,7 @@ impl Dandan {
         denylist: &Option<HashSet<String>>,
     ) -> Result<u64> {
         if !input_path.exists() {
-            return Err(anyhow!("视频文件 {} 不存在", display_path(&input_path)));
+            return Err(anyhow!("视频文件 {} 不存在", display_filename(&input_path)));
         }
 
         let input_path_str = input_path.to_str().context("视频路径无法解析")?;
@@ -313,12 +252,13 @@ impl Dandan {
         if output_path.is_dir() {
             return Err(anyhow!(
                 "输出文件 {} 不能是一个目录",
-                display_path(&output_path)
+                display_filename(&output_path)
             ));
         }
 
         let comments_json =
-            Self::fetch_comments_json(&input_path, force, simplified_or_traditional).await?;
+            Self::fetch_comments_json(&input_path, force, change_match, simplified_or_traditional)
+                .await?;
 
         let count = Self::process_by_json(
             &input_path,
@@ -330,21 +270,6 @@ impl Dandan {
         )?;
 
         Ok(count)
-    }
-
-    fn select_matches(filename: &String, matches_json: &MatchesJson) -> Result<MatchItem> {
-        let options: Vec<_> = matches_json
-            .matches
-            .iter()
-            .map(|m| format!("{} {} {}", m.episode_id, m.anime_title, m.episode_title))
-            .collect();
-        println!("无法精确匹配 {}", filename);
-        let ans = Select::new("请选择匹配的动画:", options.clone()).prompt()?;
-        let idx = options
-            .iter()
-            .position(|o| o == &ans)
-            .context("Select matches not found")?;
-        Ok(matches_json.matches[idx].clone())
     }
 
     fn process_by_json(

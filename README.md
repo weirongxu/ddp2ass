@@ -15,5 +15,11 @@ Cargo install ddp2ass
 在视频目录下运行
 
 ```
-ddp2ass
+ddp2ass download
+```
+
+查看帮助
+
+```
+ddp2ass help
 ```
