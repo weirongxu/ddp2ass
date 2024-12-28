@@ -32,7 +32,7 @@ impl fmt::Display for AssEffect {
                 write!(f, "\\move({x0}, {y0}, {x1}, {y1})")
             }
             DrawEffect::Fixed {} => {
-                error!("应该不会出现固定弹幕的");
+                error!("不应该出现固定弹幕的");
                 fmt::Result::Err(fmt::Error)
             }
         }

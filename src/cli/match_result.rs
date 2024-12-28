@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use crate::dandan_match::DandanMatch;
+use crate::{dandan_match::DandanMatch, InputFile};
 
 use super::input_path_to_list;
 
@@ -15,7 +15,8 @@ impl MatchResultArgs {
     pub async fn process(&self) -> Result<()> {
         let filepaths = input_path_to_list(&self.input)?;
         for filepath in filepaths {
-            let params = DandanMatch::get_match_params(&filepath)?;
+            let input = InputFile::from(&filepath);
+            let params = DandanMatch::get_match_params(&input)?;
             let result = DandanMatch::get_matches_json(&params).await?;
             println!(
                 "{}",

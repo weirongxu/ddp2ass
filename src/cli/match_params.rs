@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::path::{absolute, PathBuf};
 
-use crate::dandan_match::DandanMatch;
+use crate::{dandan_match::DandanMatch, InputFile};
 
 use super::input_path_to_list;
 
@@ -16,11 +15,14 @@ impl MatchParamsArgs {
     pub fn process(&self) -> Result<()> {
         let filepaths = input_path_to_list(&self.input)?;
         for filepath in filepaths {
-            let input = absolute(PathBuf::from(&filepath))?;
+            let input = InputFile::from(&filepath);
             let params = DandanMatch::get_match_params(&input)?;
             println!(
                 "{}",
-                filepath.file_name().context("文件名错误")?.to_string_lossy()
+                filepath
+                    .file_name()
+                    .context("文件名错误")?
+                    .to_string_lossy()
             );
             println!("{}", serde_json::to_string(&params.json)?);
         }

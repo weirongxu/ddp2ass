@@ -1,4 +1,4 @@
-use crate::{util::display_filename, CanvasConfig, Dandan};
+use crate::{CanvasConfig, Dandan, InputFile};
 use anyhow::{anyhow, Result};
 use clap::{Parser, ValueEnum};
 use std::{collections::HashSet, path::PathBuf};
@@ -189,8 +189,8 @@ impl Args {
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
-                log::info!("黑名单载入 {} 个", list.len());
-                log::debug!("黑名单：{:?}", list);
+                info!("黑名单载入 {} 个", list.len());
+                debug!("黑名单：{:?}", list);
                 Ok(Some(list))
             }
         }
@@ -205,14 +205,15 @@ impl Args {
             return Err(anyhow!("没有找到任何文件"));
         }
 
-        log::info!("共找到 {} 个文件", filepaths.len());
+        info!("共找到 {} 个文件", filepaths.len());
         let t = std::time::Instant::now();
         let mut process_file_total = 0;
         let mut process_danmu_total = 0;
 
         for filepath in filepaths {
+            let input_file = InputFile::from(&filepath);
             let (file_count, danmu_count) = match Dandan::process_by_path(
-                &filepath,
+                &input_file,
                 self.force,
                 self.change_match,
                 self.simplified_or_traditional.clone(),
@@ -225,7 +226,7 @@ impl Args {
             {
                 Ok(danmu_count) => (1, danmu_count),
                 Err(e) => {
-                    log::error!("文件 {} 转换错误：{:?}", display_filename(&filepath), e);
+                    error!("{} {:?}", input_file.log("文件转换错误"), e);
                     (0, 0)
                 }
             };
@@ -233,7 +234,7 @@ impl Args {
             process_danmu_total += danmu_count;
         }
 
-        log::info!(
+        info!(
             "共转换 {} 个文件，共转换 {} 条弹幕，耗时 {:?}",
             process_file_total,
             process_danmu_total,

@@ -8,6 +8,7 @@ mod dandan;
 mod dandan_match;
 mod danmu;
 mod drawable;
+mod input_file;
 mod util;
 
 pub use ass_creator::AssCreator;
@@ -16,3 +17,4 @@ pub use cli::{Args, Cli, Commands};
 pub use dandan::Dandan;
 pub use danmu::{Danmu, DanmuType};
 pub use drawable::{DrawEffect, Drawable};
+pub use input_file::InputFile;

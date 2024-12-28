@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use md5;
 use promkit::{
+    crossterm::style::Stylize,
     preset::{query_selector::QuerySelector, readline::Readline},
     suggest::Suggest,
 };
@@ -10,10 +11,10 @@ use std::{
     fmt,
     fs::File,
     io::{BufReader, Read},
-    path::{absolute, PathBuf},
+    path::PathBuf,
 };
 
-use crate::util::display_filename;
+use crate::InputFile;
 
 pub struct MatchParams {
     pub match_name: String,
@@ -153,22 +154,21 @@ impl DandanMatch {
         Ok(hash)
     }
 
-    pub fn get_match_params(input_path: &PathBuf) -> Result<MatchParams> {
-        let hash = Self::get_file_hash(input_path)?;
-        let absolute_path = absolute(input_path)?;
-        let folder_name = match absolute_path.parent() {
+    pub fn get_match_params(input_file: &InputFile) -> Result<MatchParams> {
+        let hash = Self::get_file_hash(&input_file.path)?;
+        let folder_name = match input_file.path.parent() {
             Some(p) => match p.file_name() {
                 Some(p) => p.to_string_lossy().to_string(),
                 None => "".to_string(),
             },
             None => "".to_string(),
         };
-        let filename = match input_path.with_extension("").file_name() {
+        let filename = match input_file.path.with_extension("").file_name() {
             Some(p) => p.to_string_lossy().to_string(),
             None => "".to_string(),
         };
         let match_name = format!("{} {}", folder_name, filename);
-        let file_size = input_path.metadata()?.len();
+        let file_size = input_file.path.metadata()?.len();
 
         Ok(MatchParams {
             match_name,
@@ -286,21 +286,21 @@ impl DandanMatch {
     }
 
     pub async fn get_anime_episode_item(
-        input_path: &PathBuf,
+        input_file: &InputFile,
         change_match: bool,
     ) -> Result<AnimeEpisodeItem> {
-        let match_params = Self::get_match_params(input_path)?;
+        let match_params = Self::get_match_params(input_file)?;
         let matches_json = Self::get_matches_json(&match_params).await?;
 
         Ok(if change_match {
             Self::search_anime(&match_params, &match_params.match_name, None).await?
         } else if matches_json.is_matched {
             let match_item = &matches_json.matches[0];
-            log::info!(
-                "匹配弹幕 {} 动画 {}, 话数 {}",
-                display_filename(&input_path),
-                match_item.anime_title,
-                match_item.episode_title
+            info!(
+                "{}, {}, 话数 {}",
+                input_file.log("匹配弹幕"),
+                match_item.anime_title.clone().underlined().to_string(),
+                match_item.episode_title.clone().underlined().to_string()
             );
             AnimeEpisodeItem {
                 anime_id: match_item.anime_id,

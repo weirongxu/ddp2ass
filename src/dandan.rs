@@ -1,6 +1,6 @@
 use crate::{
     cli::SimplifiedOrTraditional, dandan_match::DandanMatch, util::display_filename, AssCreator,
-    CanvasConfig, Danmu, DanmuType,
+    CanvasConfig, Danmu, DanmuType, InputFile,
 };
 use anyhow::{anyhow, Context, Result};
 use promkit::preset::listbox::Listbox;
@@ -105,12 +105,12 @@ pub struct Dandan {}
 
 impl Dandan {
     async fn fetch_comments_json(
-        input_path: &PathBuf,
+        input_file: &InputFile,
         force: bool,
         change_match: bool,
         simplified_or_traditional: SimplifiedOrTraditional,
     ) -> Result<CommentsJson> {
-        let json_path = input_path.with_extension("dandanplay.json");
+        let json_path = input_file.path.with_extension("dandanplay.json");
 
         if json_path.is_dir() {
             return Err(anyhow!(
@@ -120,16 +120,16 @@ impl Dandan {
         }
 
         if json_path.exists() && !change_match && !force {
-            log::warn!(
-                "弹幕缓存 {} 已经存在，使用 --force 参数强制更新",
-                display_filename(&json_path),
+            warn!(
+                "{}",
+                input_file.log("弹幕缓存已经存在，使用 --force 参数强制更新")
             );
             let json = read_to_string(json_path)?;
             return Ok(serde_json::from_str::<CommentsJson>(&json)?);
         }
 
         let anime_episode_item =
-            DandanMatch::get_anime_episode_item(input_path, change_match).await?;
+            DandanMatch::get_anime_episode_item(input_file, change_match).await?;
 
         let comments_url = format!(
             "https://api.dandanplay.net/api/v2/comment/{}?withRelated=true&chConvert={}",
@@ -209,7 +209,9 @@ impl Dandan {
                 .iter()
                 .map(|s| format!("{} {}", s.index, s.tags.language))
                 .collect();
-            let mut select_prompt = Listbox::new(options.clone()).title("请选择合并的字幕").prompt()?;
+            let mut select_prompt = Listbox::new(options.clone())
+                .title("请选择合并的字幕")
+                .prompt()?;
             let ans = select_prompt.run()?;
             let idx = options
                 .iter()
@@ -226,7 +228,7 @@ impl Dandan {
     }
 
     pub async fn process_by_path(
-        input_path: &PathBuf,
+        input_file: &InputFile,
         force: bool,
         change_match: bool,
         simplified_or_traditional: SimplifiedOrTraditional,
@@ -235,11 +237,14 @@ impl Dandan {
         canvas_config: CanvasConfig,
         denylist: &Option<HashSet<String>>,
     ) -> Result<u64> {
-        if !input_path.exists() {
-            return Err(anyhow!("视频文件 {} 不存在", display_filename(&input_path)));
+        if !input_file.path.exists() {
+            return Err(anyhow!(
+                "视频文件 {} 不存在",
+                &input_file.display_filename()
+            ));
         }
 
-        let input_path_str = input_path.to_str().context("视频路径无法解析")?;
+        let input_path_str = input_file.path.to_str().context("视频路径无法解析")?;
 
         let built_in_ass = Self::built_in_ass_by(
             input_path_str.to_string(),
@@ -247,7 +252,7 @@ impl Dandan {
             merge_built_in_interactive,
         )?;
 
-        let output_path = input_path.with_extension("ass");
+        let output_path = input_file.path.with_extension("ass");
 
         if output_path.is_dir() {
             return Err(anyhow!(
@@ -257,11 +262,11 @@ impl Dandan {
         }
 
         let comments_json =
-            Self::fetch_comments_json(&input_path, force, change_match, simplified_or_traditional)
+            Self::fetch_comments_json(&input_file, force, change_match, simplified_or_traditional)
                 .await?;
 
         let count = Self::process_by_json(
-            &input_path,
+            &input_file,
             &output_path,
             comments_json,
             built_in_ass,
@@ -273,14 +278,15 @@ impl Dandan {
     }
 
     fn process_by_json(
-        input_path: &PathBuf,
+        input_file: &InputFile,
         output_path: &PathBuf,
         input_json: CommentsJson,
         built_in_ass: Option<String>,
         denylist: &Option<HashSet<String>>,
         canvas_config: CanvasConfig,
     ) -> Result<u64> {
-        let title = input_path
+        let title = input_file
+            .path
             .file_name()
             .context("Filename not found")?
             .to_string_lossy()
@@ -344,7 +350,7 @@ impl Dandan {
             ass.merge(built_in_ass)?;
         }
 
-        log::info!("弹幕数量：{}, 耗时 {:?}（{}）", count, t.elapsed(), title);
+        info!("弹幕数量：{}, 耗时 {:?}（{}）", count, t.elapsed(), title);
 
         Ok((count, String::from_utf8(ass.buf)?))
     }
