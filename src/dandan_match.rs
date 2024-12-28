@@ -214,6 +214,10 @@ impl DandanMatch {
             .json::<SearchJson>()
             .await?;
         if search_json.animes.is_empty() {
+            println!(
+                "搜索 {} 结果为空",
+                match_params.match_name.clone().underlined()
+            );
             let new_anime_name = Self::input_search_params(anime_name)?;
             return Box::pin(Self::search_anime(match_params, &new_anime_name, None)).await;
         }
